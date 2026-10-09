@@ -1,0 +1,20 @@
+# Environnements et secrets
+.venv/
+venv/
+.env
+
+# Donnees generees (reproductibles via rag.chunk / rag.embed / rag.scrape)
+data/chunks.jsonl
+data/vector_db/
+data/anil_sections/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# OS / editeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
