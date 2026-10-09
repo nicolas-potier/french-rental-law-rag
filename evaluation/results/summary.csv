@@ -1,0 +1,10 @@
+﻿model,mode,questions,score,max_score,hallucinations,latency_mean_s,words_mean,score_pct
+gpt-oss-120b,baseline,40,122.5,200.0,39,1.84,357.65,61.2
+gpt-oss-120b,rag,40,137.5,200.0,1,1.16,120.3,68.8
+gpt-oss-120b,rag_recent,40,129.5,200.0,1,1.04,107.28,64.8
+gpt-oss-20b,baseline,40,84.0,200.0,36,0.56,180.45,42.0
+gpt-oss-20b,rag,40,138.0,200.0,4,0.62,117.5,69.0
+gpt-oss-20b,rag_recent,40,131.0,200.0,2,0.65,115.6,65.5
+qwen3.8-27b,baseline,40,115.5,200.0,36,8.96,266.25,57.8
+qwen3.8-27b,rag,40,133.5,200.0,0,14.7,114.7,66.8
+qwen3.8-27b,rag_recent,40,129.0,200.0,0,14.99,106.9,64.5
