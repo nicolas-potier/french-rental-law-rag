@@ -1,10 +1,12 @@
 # French Rental-Law RAG: cited answers from official sources
 
-Tenants and landlords ask precise legal questions (deposit caps, notice periods, rent rules). General-purpose LLMs answer them confidently, but not always correctly, and sometimes even cite laws that do not exist.
+Tenants and landlords often face precise legal questions: how large can a security deposit be, how much notice is required, when can the rent be raised? General-purpose LLMs answer them confidently, but not always correctly, and sometimes even cite laws that do not exist.
 
 This project builds a retrieval-augmented generation (RAG) assistant that answers only from the official documentation of the [ANIL](https://www.anil.org), the French national housing information agency, and cites the page behind each claim.
 
-On a 40-question benchmark, grounding raises the average score from 54 % to 68 % and cuts hallucinated answers from 111 to 5. It was a CentraleSupélec client project for a French legal-tech startup (team of 5, Oct 2025 – June 2026).
+On a 40-question benchmark, answering from these sources raises the average score from 54 % to 68 % and reduces the number of answers containing a hallucination from 111 to 5 (out of 120).
+
+I built it during a CentraleSupélec client project for a French legal-tech startup, in a team of 5, from October 2025 to June 2026.
 
 **Who this page is for**
 
@@ -16,7 +18,9 @@ On a 40-question benchmark, grounding raises the average score from 54 % to 68 %
 
 ## Results: RAG vs no retrieval on 40 legal questions
 
-**Conditions.** 40 French rental-law questions, each with a reference answer and a 5-point rubric. 3 free models (Groq free tier) answer in 3 modes, for 360 answers. Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks, top-3. Each answer is graded blind against the rubric, with −1 point per hallucination. One run per configuration, October 2026.
+**How the benchmark works.** It contains 40 French rental-law questions, each with a reference answer and a 5-point grading rubric. Three free models (Groq free tier) answer every question in three modes, which gives 360 answers.
+
+Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks and returns the 3 closest ones. Each answer was graded blind against its rubric, losing one point per hallucination, and each configuration was run once, in October 2026.
 
 | Model | No retrieval | RAG | RAG, sources ≥ 2014 | Hallucinations (no retrieval → RAG) | RAG refusals |
 |-------|-------------:|----:|--------------------:|:-----------------------------------:|-------------:|
@@ -29,25 +33,27 @@ On a 40-question benchmark, grounding raises the average score from 54 % to 68 %
 
 **Key findings**
 
-- **Grounding removes almost all hallucinations.** Without retrieval, models invent article numbers, case law and figures in 111 of 120 answers; with retrieval, in 5.
+- **Grounding removes almost all hallucinations.** Without retrieval, models invent article numbers, case law or figures in 111 of 120 answers; with retrieval, this drops to 5.
 - **The gain is significant.** RAG adds +14.5 points on average (95 % bootstrap CI: +3.8 to +25.3). It wins on 25 questions, ties on 2 and loses on 13.
 - **Small models catch up.** gpt-oss-20b goes from 42.0 % to 69.0 % and matches gpt-oss-120b.
-- **Filtering by date does not help** (−3.3 points, not significant). An old article is not an outdated rule: on Q23, the only relevant source is a 2004 analysis updated in 2011 and still valid. The filter removes it, and all three models drop from 5/5 to 0/5.
+- **Filtering by date does not help** (−3.3 points, not significant). An old article does not necessarily describe an outdated rule. On Q23, for instance, the only relevant source is a 2004 analysis, updated in 2011 and still valid; the filter removes it, and all three models drop from 5/5 to 0/5.
 
-**Where RAG still fails.** Almost every loss is a retrieval miss: the top-3 chunks do not contain the answer, so the model says so. This happens mostly on multi-part questions (Q14, Q22, Q25, Q34, Q40). Next steps: a larger top-k, hybrid BM25 + vector search, query decomposition, or a reranker.
+**Where RAG still fails.** Almost every loss comes from retrieval: the 3 retrieved chunks do not contain the answer, so the model says so. This happens mostly on multi-part questions (Q14, Q22, Q25, Q34, Q40).
 
-All 360 answers, their sources and their grades are in [`evaluation/results/`](evaluation/results/).
+The most promising next steps are a larger top-k, a hybrid BM25 + vector search, breaking complex questions into sub-questions, or adding a reranker.
+
+All 360 answers, with their sources and grades, are available in [`evaluation/results/`](evaluation/results/).
 
 ## Limits of the evaluation
 
 - **Small test set.** With 40 questions, confidence intervals are wide (about 21 points for the RAG gain).
-- **One run per configuration.** There is no estimate of the variance across runs.
+- **One run per configuration.** Each configuration was run once, so the variance across runs is unknown.
 - **Team-written questions.** Questions and rubrics were written by the project team, which may favour what the corpus covers.
 - **Single judge.** The published grades were produced by Claude (Opus 5.5) acting as judge, blind to model and mode, with the same rubric as the automated judge. The free Gemini tier allows only 20 requests a day, and the free Gemma endpoint was too often overloaded to grade 360 answers. The grades were not cross-checked by a human legal expert.
-- **Narrow scope.** Only 3 free models, one embedding model and one top-k value were tested.
-- **One domain, one source.** French housing law from the ANIL only; no generalisation to other legal domains is claimed.
-- **Frozen corpus.** The corpus is a June 2026 snapshot; later changes in the law are not reflected.
-- **Abstention is scored 0.** An honest "the extracts do not say" earns no points, like a wrong answer.
+- **Narrow scope.** The benchmark covers only 3 free models, one embedding model and one top-k value.
+- **One domain, one source.** The questions cover French housing law and the corpus comes only from the ANIL, so the results say nothing about other legal domains.
+- **Frozen corpus.** The corpus is a snapshot from June 2026, so later changes in the law are not reflected.
+- **Abstention is scored 0.** An honest answer saying that the extracts do not cover the question earns no points, just like a wrong answer.
 
 ## My contribution
 
@@ -98,7 +104,7 @@ flowchart LR
     IDX -- "index queried" --> QA
 ```
 
-Four design choices matter most:
+Four design choices make the pipeline reliable:
 
 - **Hierarchical chunking.** A whole article stays in one chunk if it fits in 3,000 characters. Otherwise it is split by section, then by paragraph with a 500-character overlap.
 - **Source headers.** Every chunk starts with its title, URL and section, so the model can always cite where a passage comes from.
@@ -140,11 +146,13 @@ SOURCES (top 3)
   section : Garanties
 ```
 
-Real output, unedited: gpt-oss-120b (Groq), top-3 retrieval with `multilingual-e5-small`, run on 2026-10-17. The answer is correct (1 month of rent excluding charges unfurnished, 2 months furnished), and the year of each source is shown next to its title.
+This is the real, unedited output of gpt-oss-120b (Groq), with top-3 retrieval and `multilingual-e5-small` embeddings, run on 2026-10-17.
+
+The answer is correct: one month of rent excluding charges for an unfurnished home, two months for a furnished one. The year shown next to each source title is the date of the article.
 
 ## Quickstart: run it for free
 
-**Prerequisites:** Python 3.10+, about 2 GB of disk space, and a free [Groq API key](https://console.groq.com/keys) (no credit card). Retrieval runs locally and needs no key.
+**Prerequisites:** Python 3.10+, about 2 GB of disk space, and a free [Groq API key](https://console.groq.com/keys), which requires no credit card. Retrieval runs locally and needs no key.
 
 **1. Install**
 
