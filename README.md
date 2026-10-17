@@ -50,7 +50,7 @@ All 360 answers, with their sources and grades, are available in [`evaluation/re
 - **One run per configuration.** Each configuration was run once, so the variance across runs is unknown.
 - **Team-written questions.** Questions and rubrics were written by the project team, which may favour what the corpus covers.
 - **Single judge.** The published grades were produced by Claude (Opus 5.5) acting as judge, blind to model and mode, with the same rubric as the automated judge. The free Gemini tier allows only 20 requests a day, and the free Gemma endpoint was too often overloaded to grade 360 answers. The grades were not cross-checked by a human legal expert.
-- **Narrow scope.** The benchmark covers only 3 free models, one embedding model and one top-k value.
+- **Narrow scope.** The benchmark covers only 3 free models and one embedding model.
 - **One domain, one source.** The questions cover French housing law and the corpus comes only from the ANIL, so the results say nothing about other legal domains.
 - **Frozen corpus.** The corpus is a snapshot from June 2026, so later changes in the law are not reflected.
 - **Abstention is scored 0.** An honest answer saying that the extracts do not cover the question earns no points, just like a wrong answer.
