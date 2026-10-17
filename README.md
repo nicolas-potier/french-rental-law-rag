@@ -6,7 +6,7 @@ This project builds a retrieval-augmented generation (RAG) assistant that answer
 
 On a 40-question benchmark, answering from these sources raises the average score from 54 % to 68 % and reduces the number of answers containing a hallucination from 111 to 5 (out of 120).
 
-I built it during a CentraleSupélec client project for a French legal-tech startup, in a team of 5, from October 2025 to June 2026.
+I built it during a CentraleSupélec client project for a French legal-tech startup, from October 2025 to June 2026.
 
 **Who this page is for**
 
