@@ -20,7 +20,7 @@ I built it during a CentraleSupélec client project for a French legal-tech star
 
 **How the benchmark works.** It contains 40 French rental-law questions, each with a reference answer and a 5-point grading rubric. Three free models (Groq free tier) answer every question in three modes, which gives 360 answers.
 
-Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks and returns the 3 closest ones. Each answer was graded blind against its rubric, losing one point per hallucination, and each configuration was run once, in October 2026.
+Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks and returns the 3 closest ones. Each answer was graded blind against its rubric, losing one point per hallucination, and each configuration was run once.
 
 | Model | No retrieval | RAG | RAG, sources ≥ 2014 | Hallucinations (no retrieval → RAG) | RAG refusals |
 |-------|-------------:|----:|--------------------:|:-----------------------------------:|-------------:|
