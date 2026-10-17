@@ -15,7 +15,7 @@ Utilisation :
 
     python -m rag.ask "Quel est le montant maximal du depot de garantie ?"
     python -m rag.ask "..." --min-year 2014
-    python -m rag.ask "..." --model llama-3.3-70b --top-k 5 --full
+    python -m rag.ask "..." --model qwen3.8-27b --top-k 5 --full
 """
 
 from __future__ import annotations

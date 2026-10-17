@@ -1,58 +1,152 @@
-# Retrieval-Augmented Legal QA for French Rental Law
+# French Rental-Law RAG: cited answers from official sources
 
-A RAG pipeline that answers French rental-law and housing-tax questions **with citations to official sources**, built on the public documentation of the [ANIL](https://www.anil.org) (Agence nationale pour l'information sur le logement).
+Tenants and landlords ask precise legal questions (deposit caps, notice periods, rent rules). General-purpose LLMs answer them confidently, but often wrongly, and cite laws that do not exist.
 
-Client project for a French legal-tech startup, CentraleSupélec, team of 5 (Oct 2025 – June 2026).
+This project builds a retrieval-augmented generation (RAG) assistant that answers only from the official documentation of the [ANIL](https://www.anil.org), the French national housing information agency, and cites the page behind each claim.
 
-**My role:** I built the RAG pipeline (ANIL scraping, hierarchical chunking, embedding and ChromaDB indexing, grounded generation with citations) and designed the evaluation harness (reference questions, scoring grids, LLM-as-a-judge with hallucination penalty, RAG vs no-retrieval comparison).
+On a 40-question benchmark, grounding raises the average score from 54 % to 68 % and cuts hallucinated answers from 111 to 5. It was a CentraleSupélec client project for a French legal-tech startup (team of 5, Oct 2025 – June 2026).
 
-**Original setup vs this repository.** During the project, the pipeline ran on the client's Azure OpenAI resource: ada-002 embeddings, four Azure-hosted models benchmarked in RAG vs no-retrieval mode, and GPT-4o-mini (temperature 0, JSON output) as the judge. That access ended with the project, so the original Azure runs cannot be reproduced. I therefore refactored the code so that anyone can run it for free (local embeddings, free-tier models, no client credentials) while keeping the Azure configuration available, and re-ran the full 40-question benchmark in October 2026. The [results](#results) below come from that re-run, not from the original Azure benchmark.
+**Who this page is for**
 
+- **Recruiters**: read [Results](#results-rag-vs-no-retrieval-on-40-legal-questions) and [My contribution](#my-contribution).
+- **Developers**: go to the [Quickstart](#quickstart-run-it-for-free), then the [detailed documentation](#detailed-documentation).
+- **RAG practitioners**: see [How the pipeline works](#how-the-pipeline-works) and [Limits of the evaluation](#limits-of-the-evaluation).
+
+**Jump to:** [Results](#results-rag-vs-no-retrieval-on-40-legal-questions) · [Architecture](#how-the-pipeline-works) · [Example](#example-question-answer-sources) · [Installation](#quickstart-run-it-for-free) · [Configuration](docs/configuration.md) · [Limits](#limits-of-the-evaluation)
+
+## Results: RAG vs no retrieval on 40 legal questions
+
+**Conditions.** 40 French rental-law questions, each with a reference answer and a 5-point rubric. 3 free models (Groq free tier) answer in 3 modes, for 360 answers. Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks, top-3. Each answer is graded blind against the rubric, with −1 point per hallucination. One run per configuration, October 2026.
+
+| Model | No retrieval | RAG | RAG, sources ≥ 2014 | Hallucinations (no retrieval → RAG) | RAG refusals |
+|-------|-------------:|----:|--------------------:|:-----------------------------------:|-------------:|
+| gpt-oss-120b | 61.2 % | **68.8 %** | 64.8 % | 39 → 1 | 17.5 % |
+| gpt-oss-20b | 42.0 % | **69.0 %** | 65.5 % | 36 → 4 | 10.0 % |
+| qwen3.8-27b | 57.8 % | **66.8 %** | 64.5 % | 36 → 0 | 25.0 % |
+| **Average** | 53.7 % | **68.2 %** | 64.9 % | **111 → 5** | 17.5 % |
+
+*Refusals: answers stating that the retrieved extracts do not contain the answer, as the prompt requires.*
+
+**Key findings**
+
+- **Grounding removes almost all hallucinations.** Without retrieval, models invent article numbers, case law and figures in 111 of 120 answers; with retrieval, in 5.
+- **The gain is significant.** RAG adds +14.5 points on average (95 % bootstrap CI: +3.8 to +25.3). It wins on 25 questions, ties on 2 and loses on 13.
+- **Small models catch up.** gpt-oss-20b goes from 42.0 % to 69.0 % and matches gpt-oss-120b.
+- **Filtering by date does not help** (−3.3 points, not significant). An old article is not an outdated rule: on Q23, the only relevant source is a 2004 analysis updated in 2011 and still valid. The filter removes it, and all three models drop from 5/5 to 0/5.
+
+**Where RAG still fails.** Almost every loss is a retrieval miss: the top-3 chunks do not contain the answer, so the model says so. This happens mostly on multi-part questions (Q14, Q22, Q25, Q34, Q40). Next steps: a larger top-k, hybrid BM25 + vector search, query decomposition, or a reranker.
+
+All 360 answers, their sources and their grades are in [`evaluation/results/`](evaluation/results/).
+
+## Limits of the evaluation
+
+- **Small test set.** With 40 questions, confidence intervals are wide (about 21 points for the RAG gain).
+- **One run per configuration.** There is no estimate of the variance across runs.
+- **Team-written questions.** Questions and rubrics were written by the project team, which may favour what the corpus covers.
+- **Single judge.** The published grades were produced by Claude (Opus 5.5) acting as judge, blind to model and mode, with the same rubric as the automated judge. The free Gemini tier allows only 20 requests a day, and the free Gemma endpoint was too often overloaded to grade 360 answers. The grades were not cross-checked by a human legal expert.
+- **Narrow scope.** Only 3 free models, one embedding model and one top-k value were tested.
+- **One domain, one source.** French housing law from the ANIL only; no generalisation to other legal domains is claimed.
+- **Frozen corpus.** The corpus is a June 2026 snapshot; later changes in the law are not reflected.
+- **Abstention is scored 0.** An honest "the extracts do not say" earns no points, like a wrong answer.
+
+## My contribution
+
+The project was a team effort. This repository is my part of it, refactored after the project ended. The lists below separate what I built, what I tested, and the tools I used.
+
+**What I developed**
+
+- The ANIL scraper: concurrent crawler over 12 sections, text cleaning, resumable checkpoints.
+- The hierarchical chunker, with a source header on every chunk and automatic article dating.
+- The indexing and retrieval layer: local or API embeddings, ChromaDB vector store, optional recency filter.
+- The grounded generation prompt: answer only from the extracts, cite the supporting URL, say so when the answer is missing.
+- The evaluation harness: 40 questions with 5-point rubrics, hallucination penalty, runs that resume across free-tier quotas.
+
+**What I tested**
+
+- During the project: four Azure-hosted models, with and without retrieval, graded by a GPT-4o-mini judge.
+- In October 2026: a full re-run on 3 free models × 3 modes (360 answers), shown above.
+- An ablation of the recency filter, and an error analysis of the questions where RAG loses.
+
+**Tools**
+
+Python · ChromaDB · sentence-transformers (`multilingual-e5-small`) · OpenAI-compatible APIs (Groq, Gemini, Azure OpenAI) · BeautifulSoup · python-docx · pandas
+
+## How the pipeline works
+
+```mermaid
+flowchart LR
+    subgraph IDX["1. Indexing (offline, once)"]
+        direction TB
+        web["anil.org<br/>public housing-law pages"]
+        scrape["Scrape<br/>3,777 articles"]
+        chunk["Chunk + date articles<br/>11,371 chunks"]
+        embed["Embed locally<br/>multilingual-e5-small"]
+        chroma[("ChromaDB<br/>vector store")]
+        web --> scrape --> chunk --> embed --> chroma
+    end
+
+    subgraph QA["2. Question answering (online)"]
+        direction TB
+        q["User question"]
+        qemb["Embed the question"]
+        retr["Retrieve top-3 chunks<br/>optional recency filter"]
+        llm["LLM answers from the extracts only<br/>Groq free tier, gpt-oss-120b"]
+        out["Answer + cited source URLs"]
+        q --> qemb --> retr --> llm --> out
+    end
+
+    IDX -- "index queried" --> QA
 ```
-anil.org ──► scrape ──► .docx corpus ──► hierarchical chunking ──► embeddings ──► ChromaDB
-                                          (+ article dating)                        │
-                     question ──► embedding ──► top-k retrieval ◄───────────────────┘
-                                               (optional recency filter)
-                                                      │
-                                                      ▼
-                                   LLM answer grounded in the extracts + source URLs
+
+Four design choices matter most:
+
+- **Hierarchical chunking.** A whole article stays in one chunk if it fits in 3,000 characters. Otherwise it is split by section, then by paragraph with a 500-character overlap.
+- **Source headers.** Every chunk starts with its title, URL and section, so the model can always cite where a passage comes from.
+- **Grounded prompt.** The model must answer only from the 3 retrieved extracts and cite their URLs, or state that the extracts do not answer the question.
+- **Article dating.** Each article gets a year, which enables the optional recency filter (off by default, see [Results](#results-rag-vs-no-retrieval-on-40-legal-questions)).
+
+## Example: question, answer, sources
+
+```bash
+python -m rag.ask "Quel est le montant maximal du dépôt de garantie en location vide et en location meublée ?"
 ```
 
-## Highlights
+```text
+============================================================
+REPONSE (gpt-oss-120b)
+============================================================
+Le montant maximal du dépôt de garantie est :
 
-- **Scraping**: concurrent crawler for 12 ANIL sections (legal analyses, case law, expert Q&A…), with text cleaning, navigation/footer removal and JSON checkpoints to resume after interruption.
-- **Hierarchical chunking**: the whole article if it fits in 3,000 characters, otherwise one chunk per H2 section, otherwise paragraph-level splitting with a 500-character overlap. Each chunk is prefixed with `Title / URL / Section` so the LLM always knows where a passage comes from and can cite it.
-- **Article dating & recency filter**: the corpus spans 30 years of legal analyses, many of which predate major reforms such as the 2014 ALUR law. Each article is dated (its "À jour au …" mention, else the year in its URL, else the decision date for case law; 91 % of chunks get a year) and `--min-year` can drop older and archived sources at retrieval time. The benchmark shows this filter does *not* help (see [Results](#results)), so it is off by default.
-- **Vector search**: free local embeddings (`multilingual-e5-small`) by default, or OpenAI / Azure OpenAI embeddings, stored in a local ChromaDB collection (cosine distance).
-- **Grounded generation**: the system prompt forces answers to rely only on the retrieved extracts, to cite the URL supporting each claim, and to say explicitly when the extracts do not contain the answer. Works with any OpenAI-compatible provider (Groq, Gemini, OpenAI, Azure).
-- **Evaluation harness**: 40 reference questions with a scoring grid, graded against the rubric with a **−1 penalty per detected hallucination**; compares models in **no-retrieval baseline vs RAG vs RAG on recent sources** mode. With RAG, the average score rises from 54 % to 68 % and hallucinations drop from 111 to 5 over 120 answers.
+* **Location vide** : **un mois de loyer hors charges**【https://www.anil.org/parole-expert-logement-location-bail-meublee-vide/】, 【https://www.anil.org/parole-expert-logement-location-restitution-depot-garantie/】, 【https://www.anil.org/aj-contrats-types-de-location-de-logement-residence-principale/】.  
+* **Location meublée** : **deux mois de loyer hors charges**【https://www.anil.org/parole-expert-logement-location-bail-meublee-vide/】, 【https://www.anil.org/parole-expert-logement-location-restitution-depot-garantie/】, 【https://www.anil.org/aj-contrats-types-de-location-de-logement-residence-principale/】.
 
-## Repository layout
+============================================================
+SOURCES (top 3)
+============================================================
 
+#1  similarite ~ 0.917
+  article : Location : quelles sont les différences entre un bail meublé et non meublé ? (2025)
+  url     : https://www.anil.org/parole-expert-logement-location-bail-meublee-vide/
+  section : Pour le locataire
+
+#2  similarite ~ 0.892
+  article : Propriétaire-bailleur : quel délai pour restituer le dépôt de garantie ? (2022)
+  url     : https://www.anil.org/parole-expert-logement-location-restitution-depot-garantie/
+  section : Qu’est-ce que le dépôt de garantie ?
+
+#3  similarite ~ 0.878
+  article : Contrats types de location de logement à usage de résidence principale (2024)
+  url     : https://www.anil.org/aj-contrats-types-de-location-de-logement-residence-principale/
+  section : Garanties
 ```
-.
-├── rag/
-│   ├── config.py      # paths, models, API clients
-│   ├── scrape.py      # 1. anil.org  -> data/corpus/*.docx
-│   ├── chunk.py       # 2. .docx     -> data/chunks.jsonl (chunks + year metadata)
-│   ├── embed.py       # 3. chunks    -> data/vector_db/ (ChromaDB)
-│   ├── embeddings.py  #    local (sentence-transformers) or API embeddings
-│   └── ask.py         # 4. question  -> retrieval + cited answer
-├── evaluation/
-│   ├── questions.xlsx # 40 questions, reference answers, scoring grids
-│   ├── benchmark.py   # baseline vs RAG vs RAG (recent), LLM-as-a-judge
-│   └── results/       # published run: every answer, its sources and its grade
-├── data/
-│   └── corpus/        # scraped ANIL corpus (5 .docx files, versioned)
-├── requirements.txt
-└── .env.example
-```
 
-`data/chunks.jsonl` and `data/vector_db/` are generated locally and are not versioned.
+Real output, unedited: gpt-oss-120b (Groq), top-3 retrieval with `multilingual-e5-small`, run on 2026-10-17. The answer is correct (1 month of rent excluding charges unfurnished, 2 months furnished), and the year of each source is shown next to its title.
 
-## Quickstart (free)
+## Quickstart: run it for free
 
-Requires Python 3.10+ and a free [Groq](https://console.groq.com/keys) API key (no credit card). Retrieval runs entirely locally.
+**Prerequisites:** Python 3.10+, about 2 GB of disk space, and a free [Groq API key](https://console.groq.com/keys) (no credit card). Retrieval runs locally and needs no key.
+
+**1. Install**
 
 ```bash
 git clone https://github.com/nicolas-potier/french-rental-law-rag.git
@@ -60,87 +154,45 @@ cd french-rental-law-rag
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-cp .env.example .env               # then fill in GROQ_API_KEY
 ```
 
-Build the index from the versioned corpus, then ask a question:
+**2. Set your API key**
 
 ```bash
-python -m rag.chunk                # ~1 min
-python -m rag.embed                # local embeddings, 15-45 min on a laptop CPU
+cp .env.example .env               # then set GROQ_API_KEY=... in .env
+```
+
+**3. Build the index** (once)
+
+```bash
+python -m rag.chunk                # about 1 min
+python -m rag.embed                # 15–45 min on a laptop CPU; add --max-chunks 500 for a quick test
+```
+
+**4. Ask a question**
+
+```bash
 python -m rag.ask "Quel est le montant maximal du dépôt de garantie en location meublée ?"
 ```
 
-To try it on a subset first: `python -m rag.embed --max-chunks 500`.
+## Detailed documentation
 
-## Usage
+| Document | Content |
+|----------|---------|
+| [docs/usage.md](docs/usage.md) | Every command and option, step by step: scraping, chunking, indexing, asking |
+| [docs/configuration.md](docs/configuration.md) | Prerequisites, dependencies, environment variables, models and providers |
+| [docs/evaluation.md](docs/evaluation.md) | Benchmark protocol, judge, commands, output files, how to reproduce or re-grade |
 
-| Step | Command | Main options |
-|------|---------|--------------|
-| Scrape ANIL (optional, corpus already provided) | `python -m rag.scrape --crawl` | `--sections`, `--workers`, `--delay`, `--max-articles` |
-| Chunk the corpus | `python -m rag.chunk` | `--max-chars 3000`, `--overlap-chars 500`, `--min-chars 300`, `--preview` |
-| Build the vector index | `python -m rag.embed` | `--embedding {e5,ada002,3small,3large}`, `--reset`, `--max-chunks`, `--dry-run` |
-| Ask a question | `python -m rag.ask "..."` | `--model`, `--min-year`, `--top-k 3`, `--embedding`, `--full` |
-| Run the benchmark | `python -m evaluation.benchmark` | `--models`, `--modes`, `--judge`, `--min-year`, `--limit`, `--no-judge`, `--summary-only` |
+## Project background: from Azure to free models
 
-Every command accepts `--help`.
+During the project, the pipeline ran on the client's Azure OpenAI resource: ada-002 embeddings, four Azure-hosted models, and GPT-4o-mini as the judge.
 
-## Evaluation
+That access ended with the project, so the original Azure runs cannot be reproduced. I refactored the code to run for free (local embeddings, free-tier models), while keeping the Azure configuration available.
 
-`evaluation/questions.xlsx` contains 40 rental-law questions (security deposit, notice periods, rent revision, charges, repairs, …). Each one comes with a reference answer, a point-based scoring grid (5 points) and the official source URL.
+The results on this page come from the October 2026 re-run, not from the original Azure benchmark.
 
-For each question and each model, `benchmark.py`:
+## Data and license
 
-1. generates three answers: **baseline** (the model alone), **rag** (top-3 chunks as context) and **rag_recent** (top-3 chunks among sources dated 2014 or later, archives excluded);
-2. asks a **judge** LLM (temperature 0, JSON output) to grade each answer against the grid and to flag hallucinations (invented law, article, figure or date), each one costing 1 point;
-3. aggregates score (% of max), hallucination count, mean latency and verbosity per model × mode in `evaluation/results/summary.csv`.
+The corpus is built from content published on [anil.org](https://www.anil.org); all rights to that content belong to the ANIL. It is included for research and demonstration only.
 
-Every answer is appended to `evaluation/results/records.jsonl` as soon as it is generated (with its sources), then updated with the grade and its justification. When a model or the judge hits its quota, it is skipped for the rest of the run; re-running the command resumes where it stopped, which makes it possible to spread a full run over several days of free-tier quotas.
-
-```bash
-python -m evaluation.benchmark --models gpt-oss-120b --limit 10   # quick run
-python -m evaluation.benchmark                                    # full run (gpt-oss-120b, gpt-oss-20b, Qwen; Gemma judge)
-python -m evaluation.benchmark --summary-only --judge claude-opus-5-5   # recompute the published summary, no API call
-```
-
-### Results
-
-Published run: 40 questions × 3 free models (Groq) × 3 modes = 360 answers, local `multilingual-e5-small` retrieval, top-3 chunks.
-
-| Model | Baseline | RAG | RAG (sources ≥ 2014) | Hallucinations (baseline → RAG) |
-|-------|---------:|----:|---------------------:|:-------------------------------:|
-| gpt-oss-120b | 61.2 % | **68.8 %** | 64.8 % | 39 → 1 |
-| gpt-oss-20b | 42.0 % | **69.0 %** | 65.5 % | 36 → 4 |
-| qwen3.8-27b | 57.8 % | **66.8 %** | 64.5 % | 36 → 0 |
-| **Average** | 53.7 % | **68.2 %** | 64.9 % | 111 → 5 |
-
-Takeaways:
-
-- **Grounding removes almost all hallucinations.** Without retrieval, models routinely invent article numbers, case law and figures (111 penalised answers out of 120); with the extracts and the citation constraint, 5.
-- **RAG levels the field**: the smallest model (gpt-oss-20b) gains 27 points and matches the largest one.
-- **Remaining errors are retrieval misses, not reasoning errors.** RAG loses to the baseline on 13 of 40 questions, almost always because the top-3 chunks do not contain the answer and the model, as instructed, says so (≈ 18 % of RAG answers). Multi-part questions (e.g. "what is the deadline *and* what happens if it is missed?") are the typical case. Next steps: larger top-k, hybrid BM25 + vector search, query decomposition, or a reranker.
-- **Filtering by date hurts (−3.3 points).** An old article is not necessarily an outdated rule: on Q23, the only relevant source is a 2004 analysis on rent-receipt fees that is still valid law, and the filter drops the score from 5/5 to 0/5. Keeping the filter as an opt-in was the right call.
-
-**How the published run was graded.** The free Gemini Flash tier is capped at 20 requests per day and the free Gemma endpoint was too often overloaded to grade 360 answers. The published grades were therefore produced by Claude (Opus 5.5) acting as the judge in an assisted session, with the same rubric and hallucination penalty as the automated judge, on blind, shuffled answers (model and mode hidden). The judge name is stored with each record; running the benchmark with `--judge gemma-4-31b` re-grades every answer automatically.
-
-## Configuration
-
-Credentials are read from environment variables or from a `.env` file (see [.env.example](.env.example)). Models and providers are listed in [rag/config.py](rag/config.py).
-
-| Provider | Variables | Models |
-|----------|-----------|--------|
-| Groq (free tier) | `GROQ_API_KEY` | `gpt-oss-120b`, `gpt-oss-20b`, `qwen3.8-27b` |
-| Google AI Studio (free tier) | `GEMINI_API_KEY` | `gemma-4-31b` (default judge), `gemini-3.5-flash`, `gemini-3.8-flash` (20 requests/day on the free tier) |
-| OpenAI / Azure OpenAI | `OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_API_KEY` | `gpt-4o-mini`, `gpt-5.4-nano`, `ada002` / `3small` / `3large` embeddings |
-| Azure AI Foundry | `AZURE_AI_INFERENCE_ENDPOINT` | `mistral-small-2503`, `grok-4-1-fast-non-reasoning` |
-
-The project was originally built on Azure OpenAI; the free providers and local embeddings were added so that it can be run without a paid account.
-
-## Tech stack
-
-Python · ChromaDB · sentence-transformers · OpenAI-compatible APIs (Groq, Gemini, OpenAI, Azure) · python-docx · BeautifulSoup · pandas
-
-## Data & license
-
-The corpus is built from content published on [anil.org](https://www.anil.org); all rights to that content belong to the ANIL. It is included here for research and demonstration only. Answers produced by this system are not legal advice.
+Answers produced by this system are not legal advice.
