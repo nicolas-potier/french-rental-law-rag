@@ -2,7 +2,7 @@
 
 Tenants and landlords often face precise legal questions: how large can a security deposit be, how much notice is required, when can the rent be raised? General-purpose LLMs answer them confidently, but not always correctly, and sometimes even cite laws that do not exist.
 
-This project builds a retrieval-augmented generation (RAG) assistant that answers only from the official documentation of the [ANIL](https://www.anil.org), the French national housing information agency, and cites the page behind each claim.
+This project builds a retrieval-augmented generation (RAG) assistant that answers questions about residential rentals only from the official documentation of the [ANIL](https://www.anil.org), the French national housing information agency, and cites the page behind each claim.
 
 On a 40-question benchmark, answering from these sources raises the average score from 54 % to 68 % and reduces the number of answers containing a hallucination from 111 to 5 (out of 120).
 
