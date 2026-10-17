@@ -40,7 +40,7 @@ Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks 
 
 **Where RAG still fails.** Almost every loss comes from retrieval: the 3 retrieved chunks do not contain the answer, so the model says so. This happens mostly on multi-part questions (Q14, Q22, Q25, Q34, Q40).
 
-The most promising next steps are a larger top-k, a hybrid BM25 + vector search, breaking complex questions into sub-questions, or adding a reranker.
+The most promising next steps are a hybrid BM25 + vector search, breaking complex questions into sub-questions, or adding a reranker.
 
 All 360 answers, with their sources and grades, are available in [`evaluation/results/`](evaluation/results/).
 
