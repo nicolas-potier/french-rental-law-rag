@@ -46,7 +46,7 @@ All 360 answers, with their sources and grades, are available in [`evaluation/re
 
 ## Limits of the evaluation
 
-- **Small test set.** With 40 questions, confidence intervals are wide (about 21 points for the RAG gain).
+- **Small test set.** With 40 questions, the exact size of the gain is uncertain: the 95 % confidence interval for the RAG gain ranges from +3.8 to +25.3 points. The gain is positive across the whole interval, but its magnitude could be modest or large.
 - **One run per configuration.** Each configuration was run once, so the variance across runs is unknown.
 - **Team-written questions.** Questions and rubrics were written by the project team, which may favour what the corpus covers.
 - **Single judge.** The published grades were produced by Claude (Opus 5.5) acting as judge, blind to model and mode, with the same rubric as the automated judge. The free Gemini tier allows only 20 requests a day, and the free Gemma endpoint was too often overloaded to grade 360 answers. The grades were not cross-checked by a human legal expert.
