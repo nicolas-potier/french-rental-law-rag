@@ -1,6 +1,6 @@
 # French Rental-Law RAG: cited answers from official sources
 
-Tenants and landlords ask precise legal questions (deposit caps, notice periods, rent rules). General-purpose LLMs answer them confidently, but often wrongly, and cite laws that do not exist.
+Tenants and landlords ask precise legal questions (deposit caps, notice periods, rent rules). General-purpose LLMs answer them confidently, but not always correctly, and sometimes even cite laws that do not exist.
 
 This project builds a retrieval-augmented generation (RAG) assistant that answers only from the official documentation of the [ANIL](https://www.anil.org), the French national housing information agency, and cites the page behind each claim.
 
