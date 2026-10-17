@@ -80,28 +80,24 @@ Python · ChromaDB · sentence-transformers (`multilingual-e5-small`) · OpenAI-
 ## How the pipeline works
 
 ```mermaid
-flowchart LR
-    subgraph IDX["1. Indexing (offline, once)"]
-        direction TB
-        web["anil.org<br/>public housing-law pages"]
-        scrape["Scrape<br/>3,777 articles"]
-        chunk["Chunk + date articles<br/>11,371 chunks"]
-        embed["Embed locally<br/>multilingual-e5-small"]
-        chroma[("ChromaDB<br/>vector store")]
-        web --> scrape --> chunk --> embed --> chroma
-    end
+flowchart TB
+    scrape["<b>1. Indexing, once</b><br/>Scrape anil.org<br/>3,777 articles"]
+    chunk["Chunk + date articles<br/>11,371 chunks"]
+    embed["Embed locally<br/>(e5-small)"]
+    chroma[("ChromaDB<br/>vector store")]
+    q["<b>2. Answering</b><br/>Embed the question"]
+    retr["Retrieve top-3 chunks"]
+    llm["Answer from the<br/>extracts only (LLM)"]
+    out["Answer + cited URLs"]
 
-    subgraph QA["2. Question answering (online)"]
-        direction TB
-        q["User question"]
-        qemb["Embed the question"]
-        retr["Retrieve top-3 chunks<br/>optional recency filter"]
-        llm["LLM answers from the extracts only<br/>Groq free tier, gpt-oss-120b"]
-        out["Answer + cited source URLs"]
-        q --> qemb --> retr --> llm --> out
-    end
+    scrape --> chunk --> embed --> chroma
+    q --> retr --> llm --> out
+    chroma -- "query" --> retr
 
-    IDX -- "index queried" --> QA
+    classDef offline fill:#e8f0fe,stroke:#4a6fa5,color:#1b2a41
+    classDef online fill:#e9f7ef,stroke:#3d8b5a,color:#183b26
+    class scrape,chunk,embed,chroma offline
+    class q,retr,llm,out online
 ```
 
 Four design choices make the pipeline reliable:
