@@ -34,9 +34,9 @@ Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks 
 **Key findings**
 
 - **Grounding removes almost all hallucinations.** Without retrieval, models invent article numbers, case law or figures in 111 of 120 answers; with retrieval, this drops to 5.
-- **The gain is significant.** RAG adds +14.5 points on average (95 % bootstrap CI: +3.8 to +25.3). It wins on 25 questions, ties on 2 and loses on 13.
+- **The gain is consistent.** RAG adds +14.5 points on average: it wins on 25 questions, ties on 2 and loses on 13.
 - **Small models catch up.** gpt-oss-20b goes from 42.0 % to 69.0 % and matches gpt-oss-120b.
-- **Filtering by date does not help** (−3.3 points, not significant). An old article does not necessarily describe an outdated rule. On Q23, for instance, the only relevant source is a 2004 analysis, updated in 2011 and still valid; the filter removes it, and all three models drop from 5/5 to 0/5.
+- **Filtering by date does not help** (−3.3 points). An old article does not necessarily describe an outdated rule. On Q23, for instance, the only relevant source is a 2004 analysis, updated in 2011 and still valid; the filter removes it, and all three models drop from 5/5 to 0/5.
 
 **Where RAG still fails.** Almost every loss comes from retrieval: the 3 retrieved chunks do not contain the answer, so the model says so. This happens mostly on multi-part questions (Q14, Q22, Q25, Q34, Q40).
 
@@ -46,7 +46,7 @@ All 360 answers, with their sources and grades, are available in [`evaluation/re
 
 ## Limits of the evaluation
 
-- **Small test set.** With 40 questions, the exact size of the gain is uncertain: the 95 % confidence interval for the RAG gain ranges from +3.8 to +25.3 points. The gain is positive across the whole interval, but its magnitude could be modest or large.
+- **Small test set.** With only 40 questions, the measured gains are indicative rather than precise, and a larger question set would be needed to pin them down.
 - **One run per configuration.** Each configuration was run once, so the variance across runs is unknown.
 - **Team-written questions.** Questions and rubrics were written by the project team, which may favour what the corpus covers.
 - **Single judge.** The published grades were produced by Claude (Opus 5.5) acting as judge, blind to model and mode, with the same rubric as the automated judge. The free Gemini tier allows only 20 requests a day, and the free Gemma endpoint was too often overloaded to grade 360 answers. The grades were not cross-checked by a human legal expert.
