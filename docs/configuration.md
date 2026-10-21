@@ -31,6 +31,7 @@ Install with `pip install -r requirements.txt`.
 | `openpyxl>=3.1` | Reads `evaluation/questions.xlsx`. |
 | `requests>=2.31` | HTTP downloads for the scraper. |
 | `beautifulsoup4>=4.12` | HTML parsing for the scraper. |
+| `mcp>=2.0` | MCP server (`rag.mcp_server`) and agent client (`rag.agent`). |
 
 `sentence-transformers` installs PyTorch, whose default wheel is large. To save space, install the CPU wheel first:
 

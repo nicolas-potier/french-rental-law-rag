@@ -42,7 +42,7 @@ def embed_query(text: str, alias: str) -> List[float]:
     model = EMBEDDING_MODELS[alias]
     if model.provider == "local":
         return _local_model(model.name).encode(
-            f"query: {text}", normalize_embeddings=True
+            f"query: {text}", normalize_embeddings=True, show_progress_bar=False
         ).tolist()
     return get_client().embeddings.create(model=model.name, input=[text]).data[0].embedding
 
