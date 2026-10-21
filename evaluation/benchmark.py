@@ -36,8 +36,9 @@ Utilisation :
     # Recalculer summary.csv a partir des resultats publies (aucun appel API)
     python -m evaluation.benchmark --summary-only --judge claude-opus-5-5
 
-    # Resume de l'evaluation de l'agent (13 questions ou le RAG classique perdait)
-    python -m evaluation.benchmark --summary-only --judge claude-opus-5-5         --models gpt-oss-120b --modes baseline rag agent --summary-file summary_agent.csv         --questions Q4 Q5 Q6 Q9 Q14 Q17 Q21 Q22 Q25 Q26 Q34 Q38 Q40
+    # Resume de l'evaluation de l'agent (gpt-oss-120b, 40 questions)
+    python -m evaluation.benchmark --summary-only --judge claude-opus-5-5 \
+        --models gpt-oss-120b --modes baseline rag agent --summary-file summary_agent.csv
 """
 
 from __future__ import annotations
@@ -206,6 +207,8 @@ def main() -> None:
     done = load_records()
     # Modeles (ou juge) dont le quota est epuise : ignores jusqu'au prochain lancement.
     exhausted: set[str] = set()
+    # Mode agent : un seul serveur MCP pour toute l'execution, demarre au premier besoin.
+    agent_worker = None
 
     for _, row in ([] if args.summary_only else questions.iterrows()):
         pairs = [(m, mode) for m in args.models for mode in args.modes]
@@ -233,8 +236,10 @@ def main() -> None:
             if mode == "baseline":
                 answer, latency, error = timed(answer_baseline, row["question"], model)
             elif mode == "agent":
-                from rag.agent import run_agent  # import tardif : dependance MCP
-                agent_result, latency, error = timed(run_agent, row["question"], model)
+                if agent_worker is None:
+                    from rag.agent import AgentWorker  # import tardif : dependance MCP
+                    agent_worker = AgentWorker()
+                agent_result, latency, error = timed(agent_worker.ask, row["question"], model)
                 answer = agent_result["answer"] if agent_result else ""
             else:
                 answer, latency, error = timed(generate_answer, row["question"], chunks[mode], model)
@@ -279,6 +284,9 @@ def main() -> None:
             })
             save_record(record)
             print(f"  {model:<18} {mode:<11} {record['score']:g}/{record['max_score']:g}")
+
+    if agent_worker is not None:
+        agent_worker.close()
 
     records = [r for r in done.values()
                if r["model"] in args.models and r["mode"] in args.modes

@@ -15,6 +15,7 @@ API :
     run_agent(question, model, max_steps) -> dict       # enveloppe synchrone
     run_many_async(questions, model, max_steps) -> list[dict]
     AgentSession                                          # gestionnaire de contexte
+    AgentWorker                                           # serveur partage, API synchrone
 
 `AgentSession` demarre un serveur MCP et le reutilise pour plusieurs questions :
 
@@ -44,8 +45,11 @@ import argparse
 import asyncio
 import json
 import os
+import queue
 import re
 import sys
+import threading
+from concurrent.futures import Future
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession, StdioServerParameters
@@ -211,6 +215,58 @@ async def run_many_async(questions: list[str], model: str = DEFAULT_CHAT_MODEL,
 def run_agent(question: str, model: str = DEFAULT_CHAT_MODEL, max_steps: int = 6) -> dict:
     """Version synchrone : demarre le serveur, repond a une question, l'arrete."""
     return asyncio.run(run_agent_async(question, model, max_steps))
+
+
+class AgentWorker:
+    """Serveur MCP partage entre plusieurs questions, utilisable depuis du code synchrone.
+
+    La session MCP vit dans un thread dedie (sa propre boucle asyncio) ; `ask`
+    lui transmet une question et attend la reponse. Utile pour un benchmark :
+    le serveur ne demarre qu'une fois, et la latence mesuree est celle de l'agent.
+
+        with AgentWorker() as worker:
+            result = worker.ask("...", model="gpt-oss-120b")
+    """
+
+    def __init__(self, max_steps: int = 6) -> None:
+        self.max_steps = max_steps
+        self._requests: queue.Queue = queue.Queue()
+        self._ready = threading.Event()
+        self._startup_error: BaseException | None = None
+        self._thread = threading.Thread(target=lambda: asyncio.run(self._serve()), daemon=True)
+        self._thread.start()
+        self._ready.wait()
+        if self._startup_error:
+            raise self._startup_error
+
+    async def _serve(self) -> None:
+        try:
+            async with AgentSession() as session:
+                self._ready.set()
+                while (item := await asyncio.to_thread(self._requests.get)) is not None:
+                    question, model, future = item
+                    try:
+                        future.set_result(await _run(session, question, model, self.max_steps))
+                    except Exception as exc:
+                        future.set_exception(exc)
+        except BaseException as exc:
+            self._startup_error = exc
+            self._ready.set()
+
+    def ask(self, question: str, model: str = DEFAULT_CHAT_MODEL) -> dict:
+        future: Future = Future()
+        self._requests.put((question, model, future))
+        return future.result()
+
+    def close(self) -> None:
+        self._requests.put(None)
+        self._thread.join()
+
+    def __enter__(self) -> AgentWorker:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
 
 def main() -> None:
