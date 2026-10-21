@@ -37,10 +37,11 @@ Retrieval uses local `multilingual-e5-small` embeddings over 11,371 ANIL chunks 
 - **The gain is consistent.** RAG adds +14.5 points on average: it wins on 25 questions, ties on 2 and loses on 13.
 - **Small models catch up.** gpt-oss-20b goes from 42.0 % to 69.0 % and matches gpt-oss-120b.
 - **Filtering by date does not help** (−3.3 points). An old article does not necessarily describe an outdated rule. On Q23, for instance, the only relevant source is a 2004 analysis, updated in 2011 and still valid; the filter removes it, and all three models drop from 5/5 to 0/5.
+- **Letting the model drive retrieval helps most.** An MCP agent built on the same index reaches 83.5 % with gpt-oss-120b, against 68.8 % for classic RAG (see the [MCP agent](#agentic-extension-an-mcp-server-and-a-tool-calling-agent)).
 
 **Where RAG still fails.** Almost every loss comes from retrieval: the 3 retrieved chunks do not contain the answer, so the model says so. This happens mostly on multi-part questions (Q14, Q22, Q25, Q34, Q40).
 
-The most promising next steps are a hybrid BM25 + vector search, breaking complex questions into sub-questions, or adding a reranker.
+Letting the model write its own search queries already recovers most of these failures (see the [MCP agent](#agentic-extension-an-mcp-server-and-a-tool-calling-agent)). Other promising next steps are a hybrid BM25 + vector search, breaking complex questions into sub-questions, or adding a reranker.
 
 All 360 answers, with their sources and grades, are available in [`evaluation/results/`](evaluation/results/).
 
@@ -65,18 +66,20 @@ The server (`rag/mcp_server.py`) offers two tools, `search_rental_law` and `get_
 python -m rag.agent "Après le départ du locataire, dans quels délais le bailleur doit-il restituer le dépôt de garantie, et que se passe-t-il en cas de retard ?" --trace
 ```
 
-**Evaluation.** I ran the agent on the 13 questions where classic RAG scored below the no-retrieval baseline, with gpt-oss-120b and the same blind grading as above.
+**Evaluation.** I ran the agent with gpt-oss-120b on all 40 questions, with the same blind grading as above, and compared it with the same model without retrieval and with classic RAG.
 
-| gpt-oss-120b, 13 hardest questions | No retrieval | Classic RAG | MCP agent |
-|------------------------------------|-------------:|------------:|----------:|
-| Score | 62.3 % | 30.0 % | **63.8 %** |
-| Hallucinations | 12 | 0 | 1 |
+| gpt-oss-120b | No retrieval | Classic RAG | MCP agent |
+|--------------|-------------:|------------:|----------:|
+| All 40 questions | 61.2 % | 68.8 % | **83.5 %** |
+| 13 questions where classic RAG lost | 62.3 % | 30.0 % | **63.8 %** |
+| 27 other questions | 60.7 % | 87.4 % | **93.0 %** |
+| Hallucinations (40 questions) | 39 | 1 | 1 |
 
-The agent never does worse than classic RAG on these questions (better on 9, equal on 4). It recovers the baseline's accuracy while keeping hallucinations close to zero.
+On the 13 questions where classic RAG fell below the baseline, the agent recovers the baseline's accuracy without its hallucinations. On the 27 others, where classic RAG already worked, it still improves slightly: better on 4 questions, equal on 19, slightly lower on 4.
 
-**What actually helped.** The agent rarely splits a question: only 4 of 13 answers used two searches, and it never called `get_article`. The gain mostly comes from rewriting the question into a focused query and asking for more excerpts (5 to 10 instead of 3).
+**What actually helped.** The agent rarely splits a question: only 6 of 40 answers used two searches, and it never called `get_article`. The gain mostly comes from rewriting the question into a focused query and asking for more excerpts (5 instead of 3, once 10).
 
-**Caveats.** These 13 questions were selected because classic RAG failed on them, so part of the gain may be regression to the mean; the agent was not run on the other 27 questions because of free-tier quotas. Its latency (about 50 s per answer here) is dominated by starting the MCP server for each question.
+**Caveats.** The gain on the 13 hardest questions may partly be regression to the mean, since they were selected because classic RAG failed on them; the result on all 40 questions is not affected by this selection. The latency measured in the benchmark (about 35 s per answer on average) mostly reflects waiting for the Groq free-tier rate limit; without throttling, an answer took about 2 s.
 
 ## My contribution
 
@@ -96,7 +99,7 @@ The project was a team effort. This repository is my part of it, refactored afte
 - During the project: four Azure-hosted models, with and without retrieval, graded by a GPT-4o-mini judge.
 - In October 2026: a full re-run on 3 free models × 3 modes (360 answers), shown above.
 - An ablation of the recency filter, and an error analysis of the questions where RAG loses.
-- An agentic variant on the 13 questions where classic RAG lost, compared with the same grading.
+- An agentic variant on all 40 questions, compared with the same model and the same grading.
 
 **Tools**
 

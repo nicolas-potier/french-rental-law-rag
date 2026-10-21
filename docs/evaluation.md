@@ -133,8 +133,9 @@ python -m evaluation.benchmark --judge gemma-4-31b
 
 Every answer graded by another judge is graded again, and the summary is computed from the new grades. The new grades are appended to `records.jsonl` and take precedence over the old ones, so keep a copy of the file first if you want to preserve the published grades (or restore it with `git checkout`). To generate fresh answers from scratch, move `records.jsonl` aside and run the full benchmark.
 
-The agent evaluation published in the README (13 questions, gpt-oss-120b) is summarised in `summary_agent.csv`; recompute it with:
+The agent evaluation published in the README (gpt-oss-120b, 40 questions) is summarised in `summary_agent.csv`; recompute it with:
 
 ```bash
-python -m evaluation.benchmark --summary-only --judge claude-opus-5-5     --models gpt-oss-120b --modes baseline rag agent --summary-file summary_agent.csv     --questions Q4 Q5 Q6 Q9 Q14 Q17 Q21 Q22 Q25 Q26 Q34 Q38 Q40
+python -m evaluation.benchmark --summary-only --judge claude-opus-5-5 \
+    --models gpt-oss-120b --modes baseline rag agent --summary-file summary_agent.csv
 ```
