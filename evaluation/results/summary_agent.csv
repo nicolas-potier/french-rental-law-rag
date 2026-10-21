@@ -1,0 +1,4 @@
+﻿model,mode,questions,score,max_score,hallucinations,latency_mean_s,words_mean,score_pct
+gpt-oss-120b,baseline,13,40.5,65.0,12,1.72,389.38,62.3
+gpt-oss-120b,rag,13,19.5,65.0,0,1.15,111.46,30.0
+gpt-oss-120b,agent,13,41.5,65.0,1,53.18,119.38,63.8

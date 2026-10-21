@@ -36,6 +36,7 @@ Each question is asked to each model in three modes:
 | `baseline` | The model answers alone, with a short legal-assistant system prompt and no context (temperature 0.1). |
 | `rag` | The model answers from the top-k retrieved chunks (default 3). |
 | `rag_recent` | Same, but retrieval excludes archives and sources dated before `--min-year` (default 2014, the ALUR law). Undated sources are kept. |
+| `agent` | Opt-in (`--modes agent`). The model answers through `rag.agent`: it calls the MCP server tools itself, as many times as it wants. The record also stores its `tool_calls`. See [MCP server](mcp.md). |
 
 ## 3. Judge
 
@@ -68,14 +69,16 @@ python -m evaluation.benchmark --no-judge                          # generate no
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--models M [M ...]` | `gpt-oss-120b qwen3.8-27b gpt-oss-20b` | Models to evaluate (any [chat model](configuration.md#chat-models)). |
-| `--modes {baseline,rag,rag_recent} [...]` | all three | Modes to run. |
+| `--modes {baseline,rag,rag_recent,agent} [...]` | `baseline rag rag_recent` | Modes to run (`agent` is opt-in). |
 | `--judge` | `gemma-4-31b` | Judge model, one of the models in `rag/config.py`. With `--summary-only`, any name is accepted (e.g. `claude-opus-5-5`). |
 | `--embedding {e5,ada002,3small,3large}` | `e5` | Embedding model / collection used for retrieval. |
 | `--top-k` | `3` | Chunks retrieved in `rag` and `rag_recent`. |
 | `--min-year` | `2014` | Minimum source year in `rag_recent`. |
+| `--questions ID [ID ...]` | all | Evaluate only these questions, e.g. `Q4 Q14`. |
 | `--limit` | all 40 | Evaluate only the first N questions. |
 | `--no-judge` | off | Generate answers without grading them. |
-| `--summary-only` | off | Rebuild `summary.csv` from `records.jsonl`, no API call. |
+| `--summary-only` | off | Rebuild the summary from `records.jsonl`, no API call. |
+| `--summary-file` | `summary.csv` | Name of the summary file written in `evaluation/results/`. |
 
 The vector index must exist (see [Usage](usage.md#3-build-the-index)) for `rag` and `rag_recent`, and the relevant API keys must be set (see [Configuration](configuration.md#3-environment-variables)).
 
@@ -129,3 +132,9 @@ python -m evaluation.benchmark --judge gemma-4-31b
 ```
 
 Every answer graded by another judge is graded again, and the summary is computed from the new grades. The new grades are appended to `records.jsonl` and take precedence over the old ones, so keep a copy of the file first if you want to preserve the published grades (or restore it with `git checkout`). To generate fresh answers from scratch, move `records.jsonl` aside and run the full benchmark.
+
+The agent evaluation published in the README (13 questions, gpt-oss-120b) is summarised in `summary_agent.csv`; recompute it with:
+
+```bash
+python -m evaluation.benchmark --summary-only --judge claude-opus-5-5     --models gpt-oss-120b --modes baseline rag agent --summary-file summary_agent.csv     --questions Q4 Q5 Q6 Q9 Q14 Q17 Q21 Q22 Q25 Q26 Q34 Q38 Q40
+```

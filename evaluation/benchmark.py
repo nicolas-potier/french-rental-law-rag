@@ -8,7 +8,10 @@ trois modes sont compares :
   - baseline   : le modele repond seul, sans contexte ;
   - rag        : le modele repond a partir des top-k chunks ChromaDB ;
   - rag_recent : idem, en ecartant les sources anterieures a --min-year
-                 (defaut 2014, loi ALUR) et les archives.
+                 (defaut 2014, loi ALUR) et les archives ;
+  - agent      : (sur demande, --modes agent) le modele interroge lui-meme le
+                 serveur MCP (rag.agent) : il peut decouper la question et
+                 lancer plusieurs recherches avant de repondre.
 
 Chaque reponse est notee par un juge LLM (temperature 0, sortie JSON) selon
 la grille de la question, avec une penalite de -1 point par hallucination
@@ -28,9 +31,13 @@ Utilisation :
     python -m evaluation.benchmark --models gpt-oss-120b --limit 5
     python -m evaluation.benchmark --modes baseline rag_recent --judge gemma-4-31b
     python -m evaluation.benchmark --no-judge     # generer d'abord, noter plus tard
+    python -m evaluation.benchmark --modes agent --models gpt-oss-120b --questions Q4 Q14
 
     # Recalculer summary.csv a partir des resultats publies (aucun appel API)
     python -m evaluation.benchmark --summary-only --judge claude-opus-5-5
+
+    # Resume de l'evaluation de l'agent (13 questions ou le RAG classique perdait)
+    python -m evaluation.benchmark --summary-only --judge claude-opus-5-5         --models gpt-oss-120b --modes baseline rag agent --summary-file summary_agent.csv         --questions Q4 Q5 Q6 Q9 Q14 Q17 Q21 Q22 Q25 Q26 Q34 Q38 Q40
 """
 
 from __future__ import annotations
@@ -51,7 +58,8 @@ QUESTIONS_FILE = EVAL_DIR / "questions.xlsx"
 RESULTS_DIR = EVAL_DIR / "results"
 RECORDS_FILE = RESULTS_DIR / "records.jsonl"
 
-MODES = ("baseline", "rag", "rag_recent")
+MODES = ("baseline", "rag", "rag_recent", "agent")
+DEFAULT_MODES = ["baseline", "rag", "rag_recent"]
 DEFAULT_MODELS = ["gpt-oss-120b", "qwen3.8-27b", "gpt-oss-20b"]
 
 SYSTEM_BASELINE = (
@@ -167,7 +175,8 @@ def main() -> None:
     )
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS, choices=list(CHAT_MODELS),
                         help=f"Modeles a evaluer (defaut : {' '.join(DEFAULT_MODELS)})")
-    parser.add_argument("--modes", nargs="+", default=list(MODES), choices=MODES)
+    parser.add_argument("--modes", nargs="+", default=DEFAULT_MODES, choices=MODES,
+                        help=f"Modes a evaluer (defaut : {' '.join(DEFAULT_MODES)})")
     parser.add_argument("--judge", default=DEFAULT_JUDGE_MODEL,
                         help=f"Modele juge, parmi les modeles de rag/config.py (defaut : {DEFAULT_JUDGE_MODEL})")
     parser.add_argument("--embedding", default=DEFAULT_EMBEDDING, choices=list(EMBEDDING_MODELS))
@@ -176,15 +185,21 @@ def main() -> None:
                         help="Annee minimale des sources en mode rag_recent (defaut : 2014)")
     parser.add_argument("--limit", type=int, default=None,
                         help="N'evaluer que les N premieres questions")
+    parser.add_argument("--questions", nargs="+", default=None, metavar="ID",
+                        help="N'evaluer que ces questions (ex : Q4 Q14)")
     parser.add_argument("--no-judge", action="store_true",
                         help="Genere les reponses sans les noter (notation lors d'un prochain lancement)")
     parser.add_argument("--summary-only", action="store_true",
-                        help="Recalcule summary.csv a partir de records.jsonl, sans appel API")
+                        help="Recalcule le resume a partir de records.jsonl, sans appel API")
+    parser.add_argument("--summary-file", default="summary.csv",
+                        help="Nom du fichier de resume dans evaluation/results/ (defaut : summary.csv)")
     args = parser.parse_args()
     if not args.summary_only and args.judge not in CHAT_MODELS:
         parser.error(f"--judge doit etre l'un de : {', '.join(CHAT_MODELS)}")
 
     questions = pd.read_excel(QUESTIONS_FILE)
+    if args.questions:
+        questions = questions[questions["id"].isin(args.questions)]
     if args.limit:
         questions = questions.head(args.limit)
     RESULTS_DIR.mkdir(exist_ok=True)
@@ -214,8 +229,13 @@ def main() -> None:
         for model, mode in to_answer:
             if model in exhausted:
                 continue
+            agent_result: dict = {}
             if mode == "baseline":
                 answer, latency, error = timed(answer_baseline, row["question"], model)
+            elif mode == "agent":
+                from rag.agent import run_agent  # import tardif : dependance MCP
+                agent_result, latency, error = timed(run_agent, row["question"], model)
+                answer = agent_result["answer"] if agent_result else ""
             else:
                 answer, latency, error = timed(generate_answer, row["question"], chunks[mode], model)
             if error:
@@ -228,10 +248,12 @@ def main() -> None:
                 "id": row["id"], "model": model, "mode": mode,
                 "answer": answer, "latency_s": latency, "words": len(answer.split()),
                 "max_score": float(row["max_score"]),
-                "sources": [{"title": c["metadata"].get("article_title", ""),
-                             "url": c["metadata"].get("article_url", ""),
-                             "year": c["metadata"].get("year", 0),
-                             "similarity": c["similarity"]} for c in chunks.get(mode, [])],
+                "sources": agent_result.get("sources") if mode == "agent" else [
+                    {"title": c["metadata"].get("article_title", ""),
+                     "url": c["metadata"].get("article_url", ""),
+                     "year": c["metadata"].get("year", 0),
+                     "similarity": c["similarity"]} for c in chunks.get(mode, [])],
+                **({"tool_calls": agent_result.get("tool_calls", [])} if mode == "agent" else {}),
                 "judge": None, "score": None, "hallucination": None, "justification": None,
             }
             save_record(record)
@@ -268,7 +290,7 @@ def main() -> None:
         print("\nAucun resultat.")
         return
     summary = summarize(records)
-    summary.to_csv(RESULTS_DIR / "summary.csv", index=False, encoding="utf-8-sig")
+    summary.to_csv(RESULTS_DIR / args.summary_file, index=False, encoding="utf-8-sig")
     print("\n" + summary.to_string(index=False))
     print(f"\nResultats ecrits dans {RESULTS_DIR}")
 

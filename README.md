@@ -12,9 +12,9 @@ I built it during a CentraleSupélec client project for a French legal-tech star
 
 - **Recruiters**: read [Results](#results-rag-vs-no-retrieval-on-40-legal-questions) and [My contribution](#my-contribution).
 - **Developers**: go to the [Quickstart](#quickstart-run-it-for-free), then the [detailed documentation](#detailed-documentation).
-- **RAG practitioners**: see [How the pipeline works](#how-the-pipeline-works) and [Limits of the evaluation](#limits-of-the-evaluation).
+- **RAG practitioners**: see [How the pipeline works](#how-the-pipeline-works), the [MCP agent](#agentic-extension-an-mcp-server-and-a-tool-calling-agent) and [Limits of the evaluation](#limits-of-the-evaluation).
 
-**Jump to:** [Results](#results-rag-vs-no-retrieval-on-40-legal-questions) · [Architecture](#how-the-pipeline-works) · [Example](#example-question-answer-sources) · [Installation](#quickstart-run-it-for-free) · [Configuration](docs/configuration.md) · [Limits](#limits-of-the-evaluation)
+**Jump to:** [Results](#results-rag-vs-no-retrieval-on-40-legal-questions) · [MCP agent](#agentic-extension-an-mcp-server-and-a-tool-calling-agent) · [Architecture](#how-the-pipeline-works) · [Example](#example-question-answer-sources) · [Installation](#quickstart-run-it-for-free) · [Configuration](docs/configuration.md) · [Limits](#limits-of-the-evaluation)
 
 ## Results: RAG vs no retrieval on 40 legal questions
 
@@ -55,6 +55,29 @@ All 360 answers, with their sources and grades, are available in [`evaluation/re
 - **Frozen corpus.** The corpus is a snapshot from June 2026, so later changes in the law are not reflected.
 - **Abstention is scored 0.** An honest answer saying that the extracts do not cover the question earns no points, just like a wrong answer.
 
+## Agentic extension: an MCP server and a tool-calling agent
+
+The classic pipeline always runs one search with the raw question. To let the model decide how to search, the retrieval is also exposed as an [MCP](https://modelcontextprotocol.io) server, usable by any MCP client such as Claude Desktop.
+
+The server (`rag/mcp_server.py`) offers two tools, `search_rental_law` and `get_article`, and needs no API key. A minimal agent (`rag/agent.py`) connects to it and lets gpt-oss-120b call these tools as often as it wants before answering. Setup and Claude Desktop configuration are described in [docs/mcp.md](docs/mcp.md).
+
+```bash
+python -m rag.agent "Après le départ du locataire, dans quels délais le bailleur doit-il restituer le dépôt de garantie, et que se passe-t-il en cas de retard ?" --trace
+```
+
+**Evaluation.** I ran the agent on the 13 questions where classic RAG scored below the no-retrieval baseline, with gpt-oss-120b and the same blind grading as above.
+
+| gpt-oss-120b, 13 hardest questions | No retrieval | Classic RAG | MCP agent |
+|------------------------------------|-------------:|------------:|----------:|
+| Score | 62.3 % | 30.0 % | **63.8 %** |
+| Hallucinations | 12 | 0 | 1 |
+
+The agent never does worse than classic RAG on these questions (better on 9, equal on 4). It recovers the baseline's accuracy while keeping hallucinations close to zero.
+
+**What actually helped.** The agent rarely splits a question: only 4 of 13 answers used two searches, and it never called `get_article`. The gain mostly comes from rewriting the question into a focused query and asking for more excerpts (5 to 10 instead of 3).
+
+**Caveats.** These 13 questions were selected because classic RAG failed on them, so part of the gain may be regression to the mean; the agent was not run on the other 27 questions because of free-tier quotas. Its latency (about 50 s per answer here) is dominated by starting the MCP server for each question.
+
 ## My contribution
 
 The project was a team effort. This repository is my part of it, refactored after the project ended. The lists below separate what I built, what I tested, and the tools I used.
@@ -66,16 +89,18 @@ The project was a team effort. This repository is my part of it, refactored afte
 - The indexing and retrieval layer: local or API embeddings, ChromaDB vector store, optional recency filter.
 - The grounded generation prompt: answer only from the extracts, cite the supporting URL, say so when the answer is missing.
 - The evaluation harness: 40 questions with 5-point rubrics, hallucination penalty, runs that resume across free-tier quotas.
+- An MCP server exposing the retrieval as tools, and a minimal tool-calling agent built on it.
 
 **What I tested**
 
 - During the project: four Azure-hosted models, with and without retrieval, graded by a GPT-4o-mini judge.
 - In October 2026: a full re-run on 3 free models × 3 modes (360 answers), shown above.
 - An ablation of the recency filter, and an error analysis of the questions where RAG loses.
+- An agentic variant on the 13 questions where classic RAG lost, compared with the same grading.
 
 **Tools**
 
-Python · ChromaDB · sentence-transformers (`multilingual-e5-small`) · OpenAI-compatible APIs (Groq, Gemini, Azure OpenAI) · BeautifulSoup · python-docx · pandas
+Python · ChromaDB · sentence-transformers (`multilingual-e5-small`) · Model Context Protocol (MCP) · OpenAI-compatible APIs and tool calling (Groq, Gemini, Azure OpenAI) · BeautifulSoup · python-docx · pandas
 
 ## How the pipeline works
 
@@ -186,6 +211,7 @@ python -m rag.ask "Quel est le montant maximal du dépôt de garantie en locatio
 | [docs/usage.md](docs/usage.md) | Every command and option, step by step: scraping, chunking, indexing, asking |
 | [docs/configuration.md](docs/configuration.md) | Prerequisites, dependencies, environment variables, models and providers |
 | [docs/evaluation.md](docs/evaluation.md) | Benchmark protocol, judge, commands, output files, how to reproduce or re-grade |
+| [docs/mcp.md](docs/mcp.md) | MCP server: tools, running and inspecting it, Claude Desktop configuration |
 
 ## Project background: from Azure to free models
 
